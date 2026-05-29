@@ -19,6 +19,7 @@ const MyGeneration = () => {
   const [thumbnails, setThumbnails] = useState<IThumbnail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const fetchThumbnails = async () => {
     if (!isAuthenticated) {
@@ -45,8 +46,27 @@ const MyGeneration = () => {
     }
   };
 
-  const handleDownload = (imageUrl: string) => {
-    window.open(imageUrl, "_blank");
+  // ✅ Proper download — fetches image as blob, triggers real file download
+  const handleDownload = async (imageUrl: string, title: string, thumbId: string) => {
+    setDownloadingId(thumbId);
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `${title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_thumbnail.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // fallback — open in new tab if blob download fails (e.g. CORS on some CDNs)
+      window.open(imageUrl, "_blank");
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   useEffect(() => {
@@ -83,6 +103,7 @@ const MyGeneration = () => {
           <div className="columns-1 gap-8 sm:columns-2 lg:columns-3 2xl:columns-4">
             {thumbnails.map((thumb: IThumbnail) => {
               const aspectRatioClass = aspectRatioClassMap[thumb.aspect_ratio || "16:9"];
+              const isDownloading = downloadingId === thumb._id;
               return (
                 <div
                   key={thumb._id}
@@ -91,7 +112,11 @@ const MyGeneration = () => {
                 >
                   <div className={`relative overflow-hidden rounded-t-2xl ${aspectRatioClass} bg-black`}>
                     {thumb.image_url ? (
-                      <img src={thumb.image_url} alt={thumb.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                      <img
+                        src={thumb.image_url}
+                        alt={thumb.title}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
                     ) : (
                       <div className="flex h-full items-center justify-center text-white">
                         {thumb.isGenerating ? "Generating..." : "No Image"}
@@ -109,14 +134,36 @@ const MyGeneration = () => {
                     <p className="text-xs text-zinc-500">{new Date(thumb.createdAt!).toDateString()}</p>
                   </div>
 
-                  <div onClick={(e) => e.stopPropagation()} className="absolute bottom-2 right-2 flex gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                    <button onClick={() => handleDelete(thumb._id)}>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-2 right-2 flex gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition"
+                  >
+                    <button onClick={() => handleDelete(thumb._id)} title="Delete">
                       <TrashIcon className="size-6 rounded bg-black/50 p-1 text-white transition active:bg-pink-600 md:hover:bg-pink-600" />
                     </button>
-                    <button onClick={() => handleDownload(thumb.image_url!)}>
-                      <DownloadIcon className="size-6 rounded bg-black/50 p-1 text-white transition active:bg-pink-600 md:hover:bg-pink-600" />
+
+                    <button
+                      onClick={() => handleDownload(thumb.image_url!, thumb.title, thumb._id)}
+                      disabled={isDownloading}
+                      title="Download"
+                    >
+                      {isDownloading ? (
+                        <span className="flex size-6 items-center justify-center rounded bg-black/50">
+                          <svg className="size-3 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                          </svg>
+                        </span>
+                      ) : (
+                        <DownloadIcon className="size-6 rounded bg-black/50 p-1 text-white transition active:bg-pink-600 md:hover:bg-pink-600" />
+                      )}
                     </button>
-                    <Link target="_blank" to={`/preview?thumbnail_url=${thumb.image_url}&title=${thumb.title}`}>
+
+                    <Link
+                      target="_blank"
+                      to={`/preview?thumbnail_url=${encodeURIComponent(thumb.image_url!)}&title=${encodeURIComponent(thumb.title)}`}
+                      title="Preview"
+                    >
                       <ArrowUpRightIcon className="size-6 rounded bg-black/50 p-1 text-white transition active:bg-pink-600 md:hover:bg-pink-600" />
                     </Link>
                   </div>
